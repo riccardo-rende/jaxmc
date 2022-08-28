@@ -9,14 +9,16 @@ from jaxmc.lattice import LatticeState
 @jax.jit
 def e_local_nn_1d(i:int, spins: jnp.array):
     L = jnp.size(spins)
-    return - 1.0 * spins[i] * (spins[(i+L-1)%L] + spins[(i+1)%L])
+    el = - 1.0 * spins[i] * (spins[(i+L-1)%L] + spins[(i+1)%L])
+    return el
 
 @jax.jit
-def energy(s: LatticeState, e_local: Callable) -> float:
-    def body_fn(i:int, vals: tuple[jnp.ndarray, LatticeState], e_local: Callable):
-        e, s = vals
-        return (e + e_local(i, s.spins), s)
+def energy(spins: jnp.array, e_local: Callable) -> float:
+    L = jnp.size(spins)
 
-    init_vals = (jnp.zeros(1, dtype=jnp.float64), s)
-    vals = jax.lax.fori_loop(0, s.L, partial(body_fn, e_local=e_local), init_vals)
-    return 0.5 * vals[0]
+    e = 0.0
+
+    for i in range(L):
+        e = e + e_local(i, spins)
+    e = 0.5 * e
+    return e

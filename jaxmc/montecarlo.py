@@ -5,45 +5,31 @@ import jax
 import jax.numpy as jnp
 
 from jaxmc.lattice import LatticeState
-from jaxmc.hamiltonian import e_local_nn_1d
+from jaxmc.hamiltonian import e_local_nn_1d, energy
 
 @struct.dataclass
-class ActionState():
+class SingleSpinFlipState():
     acc_call: int
     tot_call: int
-
-@struct.dataclass
-class SingleSpinFlipState(ActionState):
-    pass
 
 @struct.dataclass
 class MonteCarloState():
     key: jnp.array
 
 @jax.jit
-def single_spin_flip(i: int, spins: jnp.ndarray):
-    return spins.at[i].set(-spins[i])
-
-@jax.jit
-def single_spin_flip_step(i: int, vals: tuple[jnp.array, MonteCarloState, ActionState]):
-    spins, mc, a = vals
+def single_spin_flip_step(i: int, vals: tuple[jnp.array, MonteCarloState, SingleSpinFlipState, jnp.ndarray]):
+    spins, mc, a, rands = vals
     L = jnp.size(spins)
 
     a = a.replace(tot_call=a.tot_call+1)
 
-    new_key, subkey = jax.random.split(mc.key)
-    index = jax.random.randint(subkey, (1,), 0, L)[0]
-    mc = mc.replace(key = new_key)
-
+    index = (rands[i, 0] * L).astype(int)
     de = -2.0 * e_local_nn_1d(index, spins)
-
-    new_key, subkey = jax.random.split(mc.key)
-    rand = jax.random.uniform(subkey, (1,))[0]
-    mc = mc.replace(key = new_key)
+    rand = rands[i, 1]
 
     def accepted_func(vals):
         index, spins, a = vals
-        spins = single_spin_flip(index, spins)
+        spins = spins.at[index].set(-spins[index]) # FLIP
         a = a.replace(acc_call=a.acc_call+1)
         return spins, a
 
@@ -53,15 +39,35 @@ def single_spin_flip_step(i: int, vals: tuple[jnp.array, MonteCarloState, Action
 
     spins, a = jax.lax.cond(rand < jnp.exp(-de), accepted_func, refused_func, (index, spins, a))
 
-    return [spins, mc, a]
+    return [spins, mc, a, rands]
 
 @jax.jit
-def mc_sweeps(nsweeps: int, s: LatticeState, mc: MonteCarloState, a: ActionState):
-    init_vals = [s.spins, mc, a]
+def sweep(i: int, vals: tuple[jnp.array, MonteCarloState, SingleSpinFlipState, jnp.ndarray, dict]):
+    spins, mc, a, rands, mean_values = vals
 
-    spins, mc, a = jax.lax.fori_loop(0, s.L*nsweeps, single_spin_flip_step, init_vals)
+    L = jnp.size(spins)
+
+    for k in range(L):
+        spins, mc, a, rands = single_spin_flip_step(i*L+k, [spins, mc, a, rands])
     
+    #mean_values["e"] = mean_values["e"] + energy(spins, e_local_nn_1d)
+
+    return [spins, mc, a, rands, mean_values]
+
+def mc_sweeps(nsweeps: int, s: LatticeState, mc: MonteCarloState, a: SingleSpinFlipState):
+    tot_steps = s.L*nsweeps
+
+    # Generate all the random numbers
+    new_key, subkey = jax.random.split(mc.key, num=2)
+    rand = jax.random.uniform(subkey, (tot_steps, 2))
+    mc = mc.replace(key=new_key)
+
+    mean_values = {"e": 0.0}
+    
+    init_vals = [s.spins, mc, a, rand, mean_values]
+    spins, mc, a, _, mean_values = jax.lax.fori_loop(0, nsweeps, sweep, init_vals)
+
     s = s.replace(spins=spins)
 
-    return s, mc, a
+    return s, mc, a, mean_values
 
