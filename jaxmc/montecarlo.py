@@ -37,7 +37,7 @@ def single_spin_flip_step(i: int, vals: tuple[jnp.array, MonteCarloState, Single
         index, spins, a = vals
         return spins, a
 
-    spins, a = jax.lax.cond(rand < jnp.exp(-de), accepted_func, refused_func, (index, spins, a))
+    spins, a = jax.lax.cond(rand < jnp.exp(-0.5*de), accepted_func, refused_func, (index, spins, a))
 
     return [spins, mc, a, rands]
 
@@ -50,7 +50,7 @@ def sweep(i: int, vals: tuple[jnp.array, MonteCarloState, SingleSpinFlipState, j
     for k in range(L):
         spins, mc, a, rands = single_spin_flip_step(i*L+k, [spins, mc, a, rands])
     
-    #mean_values["e"] = mean_values["e"] + energy(spins, e_local_nn_1d)
+    mean_values["e"] = mean_values["e"] + energy(spins, e_local_nn_1d)
 
     return [spins, mc, a, rands, mean_values]
 
@@ -66,6 +66,8 @@ def mc_sweeps(nsweeps: int, s: LatticeState, mc: MonteCarloState, a: SingleSpinF
     
     init_vals = [s.spins, mc, a, rand, mean_values]
     spins, mc, a, _, mean_values = jax.lax.fori_loop(0, nsweeps, sweep, init_vals)
+
+    mean_values = jax.tree_util.tree_map(lambda x: x/nsweeps/s.L, mean_values)
 
     s = s.replace(spins=spins)
 

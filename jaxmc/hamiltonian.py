@@ -12,7 +12,7 @@ def e_local_nn_1d(i:int, spins: jnp.array):
     el = - 1.0 * spins[i] * (spins[(i+L-1)%L] + spins[(i+1)%L])
     return el
 
-@jax.jit
+@partial(jax.jit, static_argnums=(1,))
 def energy(spins: jnp.array, e_local: Callable) -> float:
     L = jnp.size(spins)
 

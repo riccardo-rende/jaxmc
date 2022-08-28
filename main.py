@@ -13,19 +13,19 @@ from jaxmc import LatticeState, energy, e_local_nn_1d, SingleSpinFlipState
 from jaxmc import * 
 
 seed = 0
-L = 10
+L = 50
 
 s = LatticeState(jnp.ones(L, dtype=jnp.float64), L)
 a = SingleSpinFlipState(0, 0)
 mc = MonteCarloState(jax.random.PRNGKey(seed))
-
 #spins, mc, a = single_spin_flip_step(1, (lattice.spins, mc, a))
 
-s, mc, a, _ = mc_sweeps(10**6, s, mc, a)
+s, mc, a, mean_values = mc_sweeps(10**5, s, mc, a)
 
 start = time.time()
-s, mc, a, _ = mc_sweeps(10**6, s, mc, a)
+s, mc, a, mean_values = mc_sweeps(10**5, s, mc, a)
 print(f"time = {time.time()-start}")
 
+print(f"mean e={mean_values['e']}")
 print("acceptance=", a.acc_call / a.tot_call)
 #print(energy(lattice, e_local_nn_1d)[0])
