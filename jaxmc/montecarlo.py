@@ -39,33 +39,33 @@ def single_spin_flip_step(i: int, vals: tuple[jnp.array, MonteCarloState, Single
 
     spins, a = jax.lax.cond(rand < jnp.exp(-0.5*de), accepted_func, refused_func, (index, spins, a))
 
-    return [spins, mc, a, rands]
+    return [spins, mc, a]
 
 @jax.jit
 def sweep(i: int, vals: tuple[jnp.array, MonteCarloState, SingleSpinFlipState, jnp.ndarray, dict]):
-    spins, mc, a, rands, mean_values = vals
+    spins, mc, a, mean_values = vals
 
     L = jnp.size(spins)
 
+    # Generate all the random numbers
+    new_key, subkey = jax.random.split(mc.key, num=2)
+    rand = jax.random.uniform(subkey, (L, 2))
+    mc = mc.replace(key=new_key)
+
     for k in range(L):
-        spins, mc, a, rands = single_spin_flip_step(i*L+k, [spins, mc, a, rands])
-    
+        spins, mc, a = single_spin_flip_step(k, [spins, mc, a, rand])
+
     mean_values["e"] = mean_values["e"] + energy(spins, e_local_nn_1d)
 
-    return [spins, mc, a, rands, mean_values]
+    return [spins, mc, a, mean_values]
 
 def mc_sweeps(nsweeps: int, s: LatticeState, mc: MonteCarloState, a: SingleSpinFlipState):
     tot_steps = s.L*nsweeps
 
-    # Generate all the random numbers
-    new_key, subkey = jax.random.split(mc.key, num=2)
-    rand = jax.random.uniform(subkey, (tot_steps, 2))
-    mc = mc.replace(key=new_key)
-
     mean_values = {"e": 0.0}
     
-    init_vals = [s.spins, mc, a, rand, mean_values]
-    spins, mc, a, _, mean_values = jax.lax.fori_loop(0, nsweeps, sweep, init_vals)
+    init_vals = [s.spins, mc, a, mean_values]
+    spins, mc, a, mean_values = jax.lax.fori_loop(0, nsweeps, sweep, init_vals)
 
     mean_values = jax.tree_util.tree_map(lambda x: x/nsweeps/s.L, mean_values)
 
